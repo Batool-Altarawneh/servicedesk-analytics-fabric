@@ -6,7 +6,7 @@
 | Document control | Detail |
 |---|---|
 | Document ID | NBL-REQ-001 |
-| Version / status | v1.2 - PoC scope; **draft, not approved** (v1.2: ingestion moved to a Fabric pipeline Copy activity with an encrypted Fabric connection; no Azure subscription required) |
+| Version / status | v1.3 - PoC scope; **draft, not approved** (v1.3: validated pagination method recorded; v1.2: ingestion moved to a Fabric pipeline Copy activity with an encrypted Fabric connection; no Azure subscription required) |
 | Date | November 23, 2026 |
 | Business lead | Dana Reyes, IT Service Manager (fictional) |
 | Sponsor | Mark, Director of IT (fictional) |
@@ -81,7 +81,7 @@ The ServiceNow SLA timer table (`task_sla`) is **not** used.
 | Source | ServiceNow PDI, Table API: `GET /api/now/table/incident` |
 | Authentication | Basic authentication with a dedicated read-only integration account (`svc_fabric_api`, roles `itil`, `snc_basic_auth_api_access`, `snc_read_only`). Credentials are stored **only in an encrypted Fabric REST connection** used by the pipeline, which supports scheduled runs; do not store plaintext secrets in Git, notebook code, logs, screenshots, or Lakehouse `Files`. For production, evaluate OAuth and Azure Key Vault |
 | Ingestion method | Fabric Data Factory pipeline **Copy activity** (REST source → Lakehouse `Files/bronze/` as JSON). A second Copy activity saves the record count from the Aggregate API (`/api/now/stats/incident?sysparm_count=true`) for the completeness check |
-| Pagination | Copy activity **pagination rules**: page size `sysparm_limit=10`; `sysparm_offset` increases by 10 per request (`RANGE:0::10`); stop when `$.result` is empty. Fallback if the rules do not behave: an Until loop with Web and Copy activities |
+| Pagination | Copy activity **pagination rules** with an offset placeholder in the relative URL: `...&sysparm_limit=10&sysparm_offset={offset}`; rule QueryParameters `{offset}` = Range start 0, step 10; EndCondition `$.result` = Empty; MaxRequestNumber 50 as a safety limit. A stable sort (`ORDERBYsys_id`) prevents page drift. Validated: 8 requests (7 data pages + 1 empty page), 67 records |
 | Fields | `sys_id`, `number`, `opened_at`, `resolved_at`, `closed_at`, `state`, `priority`, `category`, `assignment_group` |
 | Load type | Full load on each run (the PDI volume is small: 67 incidents at last check) |
 | History | Whatever demo data exists in the PDI. No 24-month history |
@@ -155,7 +155,7 @@ A Fabric Data Factory pipeline runs the ingestion and transformation notebook **
 | R-02 | The PDI hibernates when idle and can be reclaimed | Wake it before each session; keep all code in GitHub |
 | R-03 | The Fabric trial ends after 60 days | Take screenshots and export items as they are built |
 | R-04 | Timestamps are returned in UTC | Convert to Eastern Time for display only; calculate durations in UTC |
-| R-06 | Copy activity pagination rules can be fiddly to configure | Validate with page size 10 against the known total; if needed, fall back to an Until loop (same scope) |
+| R-06 | Copy activity pagination rules can be fiddly to configure | **Occurred and resolved.** A separate offset query parameter was not applied (20 identical pages, stopped only by MaxRequestNumber); RFC5988 Link-header paging fetched only 1 page. Fixed with an `{offset}` placeholder in the relative URL. Lesson: always validate paging against a known total and check for duplicate keys |
 | R-05 | Converting business-day targets to 72/120 calendar hours can **overstate or understate** P3/P4 SLA breaches | Label results as PoC-only in the report and README; implement policy-accurate business-hours/holiday rules in a future phase |
 | A-01 | PoC results show feasibility; they are not production acceptance | The full implementation needs a separate SOW |
 
